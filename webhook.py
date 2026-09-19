@@ -1,11 +1,28 @@
 from flask import Flask, request, jsonify, render_template_string
 import sqlite3
 import json
+import threading
+import time
+import requests
 
 
 app = Flask(__name__)
 
 last_sequence_id = None
+
+
+# =========================================================
+# SIMULATOR SETTINGS
+# =========================================================
+
+SIMULATOR_BASE_URL = "http://10.168.0.79:9898/api/v1"
+
+# Put ALL your real parking spot names here (must match the simulator exactly)
+PARK_SPOTS = ["S1", "S2", "S3", "S4"]
+
+# Tracks which parking spots are reserved or occupied: spot_name -> plate
+spot_lock = threading.Lock()
+spot_state = {}
 
 
 # =========================================================
@@ -141,6 +158,70 @@ def get_recent_events():
     connection.close()
 
     return events
+
+
+# =========================================================
+# AUTO-PARK LOGIC
+# =========================================================
+
+def reserve_free_spot(plate):
+    """Pick a free spot and reserve it so two cars never get the same one."""
+
+    with spot_lock:
+
+        for spot in PARK_SPOTS:
+
+            if spot not in spot_state:
+                spot_state[spot] = plate
+                return spot
+
+    return None
+
+
+def release_spot(spot_name):
+
+    with spot_lock:
+        spot_state.pop(spot_name, None)
+
+
+def auto_park_car(plate, entry_spot):
+    """
+    Sends the car from the entry spot to a free parking spot,
+    same as the Postman call:
+    POST http://10.168.0.79:9898/api/v1/car/ENTRY1/goto/S1
+    """
+
+    spot = reserve_free_spot(plate)
+
+    if spot is None:
+        print(f"NO FREE SPOT for {plate}")
+        return
+
+    url = f"{SIMULATOR_BASE_URL}/car/{entry_spot}/goto/{spot}"
+
+    for attempt in range(1, 4):
+
+        try:
+
+            response = requests.post(url, timeout=5)
+
+            print(
+                f"AUTO-PARK {plate}: POST {url} "
+                f"| HTTP {response.status_code} | {response.text}"
+            )
+
+            if response.ok:
+                return
+
+        except requests.RequestException as error:
+
+            print(f"AUTO-PARK attempt {attempt} failed:", error)
+
+        time.sleep(1)
+
+    release_spot(spot)
+
+    print(f"AUTO-PARK FAILED for {plate}")
 
 
 # =========================================================
@@ -443,6 +524,14 @@ def receive_webhook():
                 car_type
             )
 
+            # AUTOMATIC: send the car to a free parking spot
+            # (runs in the background so the webhook replies fast)
+            threading.Thread(
+                target=auto_park_car,
+                args=(plate, spot_name),
+                daemon=True
+            ).start()
+
 
         elif (
             spot_type == "EntrySpot"
@@ -474,6 +563,9 @@ def receive_webhook():
                 spot_name
             )
 
+            with spot_lock:
+                spot_state[spot_name] = plate
+
 
         elif (
             spot_type == "Park"
@@ -491,6 +583,8 @@ def receive_webhook():
                 "Spot  :",
                 spot_name
             )
+
+            release_spot(spot_name)
 
 
         elif (
@@ -686,8 +780,11 @@ if __name__ == "__main__":
 
     init_database()
 
+    # use_reloader=False stops Flask's debug mode from running two copies
+    # of the app, which would duplicate the spot tracking state
     app.run(
         host="0.0.0.0",
         port=5000,
-        debug=True
+        debug=True,
+        use_reloader=False
     )
