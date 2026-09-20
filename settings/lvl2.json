@@ -4781,7 +4781,7 @@
   ],
   "Tiles": [
     {
-      "Name": "tile10",
+      "Name": "tile9",
       "ResourceName": "map1",
       "X": 1500,
       "Y": 1130,
@@ -4789,7 +4789,7 @@
       "Scale": 1
     },
     {
-      "Name": "tile11",
+      "Name": "tile10",
       "ResourceName": "map1",
       "X": 1501,
       "Y": 4125,
@@ -4797,7 +4797,7 @@
       "Scale": 1
     },
     {
-      "Name": "tile12",
+      "Name": "tile11",
       "ResourceName": "map1",
       "X": 1500,
       "Y": 2628,
@@ -4807,8 +4807,8 @@
   ],
   "GameTexts": [],
   "camera": {
-    "X": -3409.0278,
-    "Y": -211.43481,
-    "Zoom": 0.25
+    "X": -1039.3594,
+    "Y": 1.7318115,
+    "Zoom": 0.3
   }
 }
